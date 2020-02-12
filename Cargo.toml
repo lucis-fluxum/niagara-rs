@@ -5,9 +5,9 @@ authors = ["Luc Street <lucis-fluxum@users.noreply.github.com>"]
 edition = "2018"
 
 [dependencies]
+gtk = { version = "0.8.0", features = ["v3_24"] }
 gdk-pixbuf = "*"
 glib = "*"
-gtk = { version = "0.8.0", features = ["v3_24"] }
 gio = "*"
+
 rscam = { version = "0.5", features = ["no_wrapper"] }
-tokio = { version = "0.2", features = ["full"] }
