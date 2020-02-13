@@ -28,27 +28,25 @@ macro_rules! clone {
 pub fn initialize(application: &gtk::Application) {
     let (app, gui): (Rc<RefCell<AppState>>, Rc<GuiState>) = setup_state(application);
     app.borrow_mut().setup_camera("/dev/video0", "MJPG");
-    app.borrow_mut().setup_udp("127.0.0.1:3000", "127.0.0.1:3000");
+    app.borrow_mut().setup_udp("0.0.0.0:3000", "127.0.0.1:3000");
 
+    let mut buf: [u8; 65_536] = [0; 65_536];
     idle_add(clone!(app, gui => move || {
         let app = app.borrow();
         let frame = app.capture_frame();
-        // TODO: Local video feed
-        // gui.display_frame(&frame);
+        gui.update_local_feed(&frame);
+
+        // Send video
         let socket = app.socket.as_ref().unwrap();
         let bytes_written = socket.send(&frame).unwrap();
         dbg!(bytes_written);
-        Continue(app.is_alive)
-    }));
 
-    idle_add(clone!(app, gui => move || {
-        let app = app.borrow();
-        let socket = app.socket.as_ref().unwrap();
-        let mut buf = [0; 65_536];
-        let bytes_read = socket.recv(&mut buf).unwrap();
-        let buf = buf.split_at(bytes_read).0;
-        dbg!(buf.len());
-        gui.display_frame(buf);
+        // Receive video
+//        let bytes_read = socket.recv(&mut buf).unwrap();
+//        let new_buf = buf.split_at(bytes_read).0;
+//        dbg!(new_buf.len());
+//        gui.update_remote_feed(new_buf);
+
         Continue(app.is_alive)
     }));
 
@@ -59,13 +57,15 @@ pub fn initialize(application: &gtk::Application) {
 
 fn setup_state(application: &gtk::Application) -> (Rc<RefCell<AppState>>, Rc<GuiState>) {
     let window = gtk::ApplicationWindow::new(application);
-    window.set_title("Niagra");
+    window.set_title("Niagara");
     window.set_position(gtk::WindowPosition::Center);
 
     let box_ = gtk::Box::new(gtk::Orientation::Vertical, 10);
-    let image = gtk::Image::new();
+    let local_feed = gtk::Image::new();
+    let remote_feed = gtk::Image::new();
     let button = gtk::Button::new_with_label("Click me!");
-    box_.add(&image);
+    box_.add(&local_feed);
+    box_.add(&remote_feed);
     box_.add(&button);
 
     window.add(&box_);
@@ -75,7 +75,8 @@ fn setup_state(application: &gtk::Application) -> (Rc<RefCell<AppState>>, Rc<Gui
         application: application.clone(),
         window,
         box_,
-        image,
+        local_feed,
+        remote_feed,
         button,
     });
 

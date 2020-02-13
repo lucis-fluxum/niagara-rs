@@ -26,7 +26,7 @@ impl AppState {
         camera
             .start(&rscam::Config {
                 interval: (1, 30),
-                resolution: (640, 480),
+                resolution: (640, 360),
                 format: camera_format.as_bytes(),
                 ..Default::default()
             })
@@ -56,15 +56,23 @@ pub(crate) struct GuiState {
     pub(crate) application: gtk::Application,
     pub(crate) window: gtk::ApplicationWindow,
     pub(crate) box_: gtk::Box,
-    pub(crate) image: gtk::Image,
+    pub(crate) local_feed: gtk::Image,
+    pub(crate) remote_feed: gtk::Image,
     pub(crate) button: gtk::Button,
 }
 
 impl GuiState {
-    pub(crate) fn display_frame(&self, buf: &[u8]) {
+    pub(crate) fn update_local_feed(&self, buf: &[u8]) {
         let stream = MemoryInputStream::new_from_bytes(&Bytes::from(&buf));
         let cancellable: Option<&gio::Cancellable> = None;
         let pixbuf = Pixbuf::new_from_stream(&stream, cancellable).unwrap();
-        self.image.set_from_pixbuf(Some(&pixbuf));
+        self.local_feed.set_from_pixbuf(Some(&pixbuf));
+    }
+
+    pub(crate) fn update_remote_feed(&self, buf: &[u8]) {
+        let stream = MemoryInputStream::new_from_bytes(&Bytes::from(&buf));
+        let cancellable: Option<&gio::Cancellable> = None;
+        let pixbuf = Pixbuf::new_from_stream(&stream, cancellable).unwrap();
+        self.remote_feed.set_from_pixbuf(Some(&pixbuf));
     }
 }
