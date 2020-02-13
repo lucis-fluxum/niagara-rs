@@ -26,7 +26,7 @@ impl AppState {
         camera
             .start(&rscam::Config {
                 interval: (1, 30),
-                resolution: (640, 360),
+                resolution: (424, 240),
                 format: camera_format.as_bytes(),
                 ..Default::default()
             })

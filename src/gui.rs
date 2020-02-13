@@ -28,7 +28,7 @@ macro_rules! clone {
 pub fn initialize(application: &gtk::Application) {
     let (app, gui): (Rc<RefCell<AppState>>, Rc<GuiState>) = setup_state(application);
     app.borrow_mut().setup_camera("/dev/video0", "MJPG");
-    app.borrow_mut().setup_udp("0.0.0.0:3000", "127.0.0.1:3000");
+    app.borrow_mut().setup_udp("0.0.0.0:3000", "0.0.0.0:3000");
 
     let mut buf: [u8; 65_536] = [0; 65_536];
     idle_add(clone!(app, gui => move || {
@@ -38,14 +38,15 @@ pub fn initialize(application: &gtk::Application) {
 
         // Send video
         let socket = app.socket.as_ref().unwrap();
-        let bytes_written = socket.send(&frame).unwrap();
-        dbg!(bytes_written);
+        dbg!((&frame).len());
+        socket.send(&frame).unwrap_or(0);
 
         // Receive video
-//        let bytes_read = socket.recv(&mut buf).unwrap();
-//        let new_buf = buf.split_at(bytes_read).0;
-//        dbg!(new_buf.len());
-//        gui.update_remote_feed(new_buf);
+        // TODO: if there's no feed to read, this blocks the main thread. Maybe try something async
+        let bytes_read = socket.recv(&mut buf).unwrap();
+        let new_buf = buf.split_at(bytes_read).0;
+        dbg!(new_buf.len());
+        gui.update_remote_feed(new_buf);
 
         Continue(app.is_alive)
     }));
