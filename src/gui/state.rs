@@ -2,8 +2,8 @@ use std::io;
 use std::net::{ToSocketAddrs, UdpSocket};
 
 use gdk_pixbuf::Pixbuf;
-use gio::MemoryInputStream;
 use gio::prelude::*;
+use gio::MemoryInputStream;
 use glib::Bytes;
 use gtk::prelude::*;
 use rscam::{Camera, FormatInfo, Frame};
@@ -15,7 +15,11 @@ pub(crate) struct AppState {
 }
 
 impl AppState {
-    pub(crate) fn setup_udp(&mut self, local_addr: impl ToSocketAddrs, remote_addr: impl ToSocketAddrs) {
+    pub(crate) fn setup_udp(
+        &mut self,
+        local_addr: impl ToSocketAddrs,
+        remote_addr: impl ToSocketAddrs,
+    ) {
         let socket = UdpSocket::bind(local_addr).unwrap();
         socket.connect(remote_addr).unwrap();
         self.socket = Some(socket);
