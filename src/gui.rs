@@ -3,7 +3,6 @@ use std::sync::{Arc, RwLock};
 use gio::prelude::*;
 use gtk::prelude::*;
 use tokio::runtime::Runtime;
-use tokio::sync::watch;
 
 use state::*;
 
@@ -31,30 +30,33 @@ pub fn initialize(application: &gtk::Application) {
     app.write().unwrap().setup_camera("/dev/video0", "MJPG");
     app.write().unwrap().setup_udp("0.0.0.0:3000", "0.0.0.0:3000");
 
-    let first_frame = app.read().unwrap().capture_frame();
-    let (camera_tx, mut camera_rx) = watch::channel(first_frame.to_vec());
+    let (local_feed_sender, local_feed_receiver) = glib::MainContext::channel(glib::PRIORITY_DEFAULT);
 
-//    app.read().unwrap().runtime.spawn({
-//        let app = Arc::clone(&app);
-//        async move {
-//            tokio::task::spawn_blocking(move || {
-//                loop {
-//                    let app = app.read().unwrap();
-//                    if app.is_alive {
-//                        camera_tx.broadcast(app.capture_frame().to_vec()).unwrap();
-//                    } else {
-//                        break;
-//                    }
-//                }
-//            }).await.unwrap();
-//        }
-//    });
+    // Read from camera and send frame to glib channel
+    app.read().unwrap().runtime.spawn({
+        let app = Arc::clone(&app);
+        async move {
+            tokio::task::spawn_blocking(move || {
+                loop {
+                    match local_feed_sender.send(app.read().unwrap().capture_frame().to_vec()) {
+                        Ok(()) => {}
+                        Err(e) => {
+                            eprintln!("Error sending frame through channel: {}", e);
+                            break;
+                        },
+                    };
+                }
+            }).await
+        }
+    });
 
-    // TODO: This works, but blocks main thread. Offloading captures to separate thread makes CPU usage go to 100%
-    idle_add(clone!(app, gui => move || {
-        gui.read().unwrap().update_local_feed(&app.read().unwrap().capture_frame().to_vec());
-        Continue(app.read().unwrap().is_alive)
+    // Read from channel and update local feed
+    local_feed_receiver.attach(None, clone!(gui => move |buf| {
+        gui.read().unwrap().update_local_feed(&buf);
+        Continue(true)
     }));
+
+    // TODO: Socket communication
 
     gui.read().unwrap().application.connect_shutdown(clone!(app => move |_| {
         app.write().unwrap().is_alive = false;
