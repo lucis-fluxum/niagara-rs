@@ -1,6 +1,5 @@
 use std::sync::{Arc, RwLock};
 
-use gio::prelude::*;
 use gtk::prelude::*;
 use tokio::runtime::Runtime;
 
@@ -28,39 +27,42 @@ macro_rules! clone {
 pub fn initialize(application: &gtk::Application) {
     let (app, gui) = setup_state(application);
     app.write().unwrap().setup_camera("/dev/video0", "MJPG");
-    app.write().unwrap().setup_udp("0.0.0.0:3000", "0.0.0.0:3000");
+    app.write()
+        .unwrap()
+        .setup_udp("0.0.0.0:3000", "0.0.0.0:3000");
 
-    let (local_feed_sender, local_feed_receiver) = glib::MainContext::channel(glib::PRIORITY_DEFAULT);
+    let (local_feed_sender, local_feed_receiver) =
+        glib::MainContext::channel(glib::PRIORITY_DEFAULT);
 
     // Read from camera and send frame to glib channel
+    // TODO: Perhaps use the executor provided by glib
     app.read().unwrap().runtime.spawn({
         let app = Arc::clone(&app);
         async move {
-            tokio::task::spawn_blocking(move || {
-                loop {
-                    match local_feed_sender.send(app.read().unwrap().capture_frame().to_vec()) {
-                        Ok(()) => {}
-                        Err(e) => {
-                            eprintln!("Error sending frame through channel: {}", e);
-                            break;
-                        },
-                    };
-                }
-            }).await
+            tokio::task::spawn_blocking(move || loop {
+                match local_feed_sender.send(app.read().unwrap().capture_frame().to_vec()) {
+                    Ok(()) => {}
+                    Err(e) => {
+                        // TODO: Proper logging
+                        eprintln!("Error sending frame through channel: {}", e);
+                        break;
+                    }
+                };
+            })
+            .await
         }
     });
 
     // Read from channel and update local feed
-    local_feed_receiver.attach(None, clone!(gui => move |buf| {
-        gui.read().unwrap().update_local_feed(&buf);
-        Continue(true)
-    }));
+    local_feed_receiver.attach(
+        None,
+        clone!(gui => move |buf| {
+            gui.read().unwrap().update_local_feed(&buf);
+            Continue(true)
+        }),
+    );
 
     // TODO: Socket communication
-
-    gui.read().unwrap().application.connect_shutdown(clone!(app => move |_| {
-        app.write().unwrap().is_alive = false;
-    }));
 }
 
 fn setup_state(application: &gtk::Application) -> (Arc<RwLock<AppState>>, Arc<RwLock<GuiState>>) {
@@ -92,7 +94,6 @@ fn setup_state(application: &gtk::Application) -> (Arc<RwLock<AppState>>, Arc<Rw
         runtime: Runtime::new().unwrap(),
         socket: None,
         camera: None,
-        is_alive: true,
     }));
 
     (app, gui)
