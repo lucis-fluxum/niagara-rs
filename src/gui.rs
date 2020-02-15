@@ -1,8 +1,9 @@
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::sync::{Arc, RwLock};
 
 use gio::prelude::*;
 use gtk::prelude::*;
+use tokio::runtime::Runtime;
+use tokio::sync::watch;
 
 use state::*;
 
@@ -13,50 +14,54 @@ macro_rules! clone {
     (@param $x:ident) => ( $x );
     ($($n:ident),+ => move || $body:expr) => (
         {
-            $( let $n = Rc::clone(&$n); )+
+            $( let $n = Arc::clone(&$n); )+
             move || $body
         }
     );
     ($($n:ident),+ => move |$($p:tt),+| $body:expr) => (
         {
-            $( let $n = Rc::clone(&$n); )+
+            $( let $n = Arc::clone(&$n); )+
             move |$(clone!(@param $p),)+| $body
         }
     );
 }
 
 pub fn initialize(application: &gtk::Application) {
-    let (app, gui): (Rc<RefCell<AppState>>, Rc<GuiState>) = setup_state(application);
-    app.borrow_mut().setup_camera("/dev/video0", "MJPG");
-    app.borrow_mut().setup_udp("0.0.0.0:3000", "0.0.0.0:3000");
+    let (app, gui) = setup_state(application);
+    app.write().unwrap().setup_camera("/dev/video0", "MJPG");
+    app.write().unwrap().setup_udp("0.0.0.0:3000", "0.0.0.0:3000");
 
-    let mut buf: [u8; 65_536] = [0; 65_536];
+    let first_frame = app.read().unwrap().capture_frame();
+    let (camera_tx, mut camera_rx) = watch::channel(first_frame.to_vec());
+
+//    app.read().unwrap().runtime.spawn({
+//        let app = Arc::clone(&app);
+//        async move {
+//            tokio::task::spawn_blocking(move || {
+//                loop {
+//                    let app = app.read().unwrap();
+//                    if app.is_alive {
+//                        camera_tx.broadcast(app.capture_frame().to_vec()).unwrap();
+//                    } else {
+//                        break;
+//                    }
+//                }
+//            }).await.unwrap();
+//        }
+//    });
+
+    // TODO: This works, but blocks main thread. Offloading captures to separate thread makes CPU usage go to 100%
     idle_add(clone!(app, gui => move || {
-        let app = app.borrow();
-        let frame = app.capture_frame();
-        gui.update_local_feed(&frame);
-
-        // Send video
-        let socket = app.socket.as_ref().unwrap();
-        dbg!((&frame).len());
-        socket.send(&frame).unwrap_or(0);
-
-        // Receive video
-        // TODO: if there's no feed to read, this blocks the main thread. Maybe try something async
-        let bytes_read = socket.recv(&mut buf).unwrap();
-        let new_buf = buf.split_at(bytes_read).0;
-        dbg!(new_buf.len());
-        gui.update_remote_feed(new_buf);
-
-        Continue(app.is_alive)
+        gui.read().unwrap().update_local_feed(&app.read().unwrap().capture_frame().to_vec());
+        Continue(app.read().unwrap().is_alive)
     }));
 
-    gui.application.connect_shutdown(clone!(app => move |_| {
-        app.borrow_mut().is_alive = false;
+    gui.read().unwrap().application.connect_shutdown(clone!(app => move |_| {
+        app.write().unwrap().is_alive = false;
     }));
 }
 
-fn setup_state(application: &gtk::Application) -> (Rc<RefCell<AppState>>, Rc<GuiState>) {
+fn setup_state(application: &gtk::Application) -> (Arc<RwLock<AppState>>, Arc<RwLock<GuiState>>) {
     let window = gtk::ApplicationWindow::new(application);
     window.set_title("Niagara");
     window.set_position(gtk::WindowPosition::Center);
@@ -72,16 +77,17 @@ fn setup_state(application: &gtk::Application) -> (Rc<RefCell<AppState>>, Rc<Gui
     window.add(&box_);
     window.show_all();
 
-    let gui = Rc::new(GuiState {
+    let gui = Arc::new(RwLock::new(GuiState {
         application: application.clone(),
         window,
         box_,
         local_feed,
         remote_feed,
         button,
-    });
+    }));
 
-    let app = Rc::new(RefCell::new(AppState {
+    let app = Arc::new(RwLock::new(AppState {
+        runtime: Runtime::new().unwrap(),
         socket: None,
         camera: None,
         is_alive: true,

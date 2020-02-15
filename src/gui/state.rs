@@ -2,13 +2,15 @@ use std::io;
 use std::net::{ToSocketAddrs, UdpSocket};
 
 use gdk_pixbuf::Pixbuf;
-use gio::prelude::*;
 use gio::MemoryInputStream;
+use gio::prelude::*;
 use glib::Bytes;
 use gtk::prelude::*;
 use rscam::{Camera, FormatInfo, Frame};
+use tokio::runtime::Runtime;
 
 pub(crate) struct AppState {
+    pub(crate) runtime: Runtime,
     pub(crate) socket: Option<UdpSocket>,
     pub(crate) camera: Option<Camera>,
     pub(crate) is_alive: bool,

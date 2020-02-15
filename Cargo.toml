@@ -11,3 +11,4 @@ glib = "*"
 gio = "*"
 
 rscam = { version = "0.5", features = ["no_wrapper"] }
+tokio = { version = "0.2", features = ["full"] }
